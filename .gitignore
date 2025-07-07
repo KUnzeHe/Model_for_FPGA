@@ -1,0 +1,21 @@
+# 忽略所有数据集和大文件
+Model_for_Classification/datasets/
+Model_for_Classification/*.npz
+Model_for_MD/datasets/
+Model_for_MD/*.npz
+
+# 忽略模型权重
+Model_for_Classification/model_pth/
+Model_for_MD/model_pth/
+Model_for_Classification/*.pth
+Model_for_MD/*.pth
+
+# 忽略日志、缓存、临时文件
+Model_for_Classification/logs/
+Model_for_MD/logs/
+Model_for_Classification/__pycache__/
+Model_for_MD/__pycache__/
+Model_for_Classification/.conda/
+Model_for_MD/.conda/
+Model_for_Classification/txt/
+Model_for_MD/txt/
