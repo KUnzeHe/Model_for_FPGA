@@ -2,23 +2,26 @@ import torch
 from torch import nn
 import copy
 import os
+import numpy as np
+
+print("当前工作目录：", os.getcwd())
 
 # ==========================================================================
-# 步骤 1: 配置区 - 您只需要修改这里！
+# 步骤 1: 配置区 
 # ==========================================================================
 # ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
 
 # ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
-num_modes = 12  # <-- 修改这里来切换模型
+num_modes = 10  # <-- 修改这里来切换模型
 
 # 根据论文或实验，为不同模型选择合适的Q值
 # 这是一个可以调整的超参数
 Q_VALUE = 10
 
 if num_modes <= 19:
-    WEIGHT_FILE_NAME = f'model_pth/{num_modes}modes/model_dict_15.pth'
+    WEIGHT_FILE_NAME = f'Model_for_Classification/model_pth/{num_modes}modes/model_dict_15.pth'
 if num_modes <= 40 and num_modes > 19:
-    WEIGHT_FILE_NAME = f'model_pth/{num_modes}modes/model_dict_40.pth'
+    WEIGHT_FILE_NAME = f'Model_for_Classification/model_pth/{num_modes}modes/model_dict_40.pth'
 
 # ------------------------------------------------------------------------------
 # 2. 定义一个通用的模拟定点运算的新模型类
@@ -58,6 +61,65 @@ class QuantizedNet(nn.Module):
         
         return output_float
 
+# ==========================================================================
+# COE导出
+# ==========================================================================
+def tensor_to_coe(tensor, out_path, radix=16, dtype='int8'):
+    tensor = tensor.flatten().cpu().numpy()
+    if dtype == 'int8':
+        tensor = tensor.astype(np.int8)
+        tensor_u = tensor.astype(np.uint8)
+        fmt = '{:02X}'
+    elif dtype == 'int16':
+        tensor = tensor.astype(np.int16)
+        tensor_u = tensor.astype(np.uint16)
+        fmt = '{:04X}'
+    elif dtype == 'int32':
+        tensor = tensor.astype(np.int32)
+        tensor_u = tensor.astype(np.uint32)
+        fmt = '{:08X}'
+    else:
+        raise ValueError('Unsupported dtype: ' + dtype + '. Supported: int8, int16, int32')
+    with open(out_path, 'w') as f:
+        f.write(f"MEMORY_INITIALIZATION_RADIX={radix};\n")
+        f.write("MEMORY_INITIALIZATION_VECTOR=\n")
+        for i, val in enumerate(tensor_u):
+            if i == len(tensor_u) - 1:
+                f.write(fmt.format(val) + ';\n')
+            else:
+                f.write(fmt.format(val) + ',\n')
+
+def export_coe_files(weight_dict, out_dir):
+    os.makedirs(out_dir, exist_ok=True)
+    layer_mapping = {
+        'features.0.weight': 'conv1.weight_int8.coe',
+        'features.0.bias': 'conv1.bias_int32.coe',
+        'features.2.weight': 'conv2.weight_int8.coe',
+        'features.2.bias': 'conv2.bias_int32.coe',
+        'features.6.weight': 'conv3.weight_int8.coe',
+        'features.6.bias': 'conv3.bias_int32.coe',
+        'linear.1.weight': 'linear1.weight_int8.coe',
+        'linear.1.bias': 'linear1.bias_int32.coe',
+        'linear.3.weight': 'linear2.weight_int8.coe',
+        'linear.3.bias': 'linear2.bias_int32.coe',
+    }
+    exported_count = 0
+    for key, tensor in weight_dict.items():
+        if key in layer_mapping:
+            out_path = os.path.join(out_dir, layer_mapping[key])
+            if 'weight' in key:
+                dtype = 'int8'
+            elif 'bias' in key:
+                dtype = 'int32'
+            else:
+                continue
+            print(f"导出 {key} -> {layer_mapping[key]}")
+            tensor_to_coe(tensor, out_path, radix=16, dtype=dtype)
+            exported_count += 1
+        else:
+            print(f"警告: 未找到层 {key} 的映射，跳过")
+    print(f"\n成功导出 {exported_count} 个COE文件到 {out_dir}")
+
 # --- 主逻辑开始 ---
 if __name__ == '__main__':
 
@@ -73,7 +135,7 @@ if __name__ == '__main__':
    
     # 构建文件路径
     weight_path = os.path.join('model_pth', f'{num_modes}modes', WEIGHT_FILE_NAME)
-    output_quantized_weight_path = f"model_pth/{num_modes}modes_model_pth/for{num_modes}modes_quantized_int_weights.pth"
+    output_quantized_weight_path = f"Model_for_Classification/model_pth/{num_modes}modes_model_pth/for{num_modes}modes_quantized_int_weights.pth"
     
     SCALE = 2.0 ** Q_VALUE
     print(f"使用的Q值为: {Q_VALUE}, 对应的缩放因子 Scale 为: {SCALE}")
@@ -169,3 +231,9 @@ if __name__ == '__main__':
     integer_weights = {name: param.int() for name, param in quantized_model.state_dict().items()}
     torch.save(integer_weights, output_quantized_weight_path)
     print(f"\n已将量化后的整数权重保存到 {output_quantized_weight_path}")
+
+    # === COE导出 ===
+    coe_output_dir = f"Model_for_Classification/coe/coe_{num_modes}modes"
+    print(f"\n--- 正在导出COE文件 ---")
+    export_coe_files(integer_weights, coe_output_dir)
+    print(f"\nCOE文件已导出到: {coe_output_dir}")
