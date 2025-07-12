@@ -9,6 +9,8 @@ Model_for_Classification/model_pth/
 Model_for_MD/model_pth/
 Model_for_Classification/*.pth
 Model_for_MD/*.pth
+Model_for_MD/coe/
+Model_for_Classification/coe/
 
 # 忽略日志、缓存、临时文件
 Model_for_Classification/logs/
